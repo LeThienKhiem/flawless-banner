@@ -5,9 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flawless Clean — Porsche × Azalea</title>
 <style>
-  :root{ --ink:#1c1a1a; --rose:#c94f63; --bg:#eef0f2; }
+  :root{
+    --ink:#1c1a1a; --rose:#c94f63; --bg:#eef0f2;
+    --sub:#4a4645; --dim:#6b6663; --faint:#a09a97; --hint:#8b8684;
+    --loadbg:rgba(238,240,242,.96); --bar:#ddd; --line:rgba(28,26,26,.18);
+  }
+  html[data-theme="dark"]{
+    --ink:#eceae8; --rose:#e8899a; --bg:#101214;
+    --sub:#a8a3a0; --dim:#8d8783; --faint:#6f6a66; --hint:#7d7874;
+    --loadbg:rgba(16,18,20,.96); --bar:#2a2d30; --line:rgba(236,234,232,.22);
+  }
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{height:100%;overflow:hidden;background:var(--bg);font-family:Verdana,Arial,sans-serif}
+  html,body{height:100%;overflow:hidden;background:var(--bg);font-family:Verdana,Arial,sans-serif;
+    transition:background .45s ease}
   #stage{position:fixed;inset:0}
   canvas{display:block}
   .overlay{position:fixed;inset:0;pointer-events:none;z-index:5;
@@ -15,27 +25,61 @@
   h1{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-style:italic;
     font-size:clamp(2.2rem,6.5vw,4.8rem);line-height:1.04;letter-spacing:.04em;text-align:center;color:var(--rose)}
   .sub{margin-top:1.8vh;max-width:52ch;text-align:center;font-size:clamp(.66rem,1vw,.82rem);
-    letter-spacing:.22em;line-height:1.9;color:#4a4645}
+    letter-spacing:.22em;line-height:1.9;color:var(--sub)}
   .stat{position:fixed;pointer-events:none;z-index:5;max-width:220px}
   .stat b{display:block;font-family:Georgia,serif;font-weight:400;font-size:clamp(2rem,4.4vw,3.6rem);color:var(--ink)}
-  .stat span{font-size:.62rem;letter-spacing:.14em;line-height:1.7;color:#6b6663}
+  .stat span{font-size:.62rem;letter-spacing:.14em;line-height:1.7;color:var(--dim)}
   .stat.tl{left:5vw;top:34vh} .stat.tr{right:5vw;top:34vh;text-align:right}
   .stat.bl{left:5vw;bottom:8vh} .stat.br{right:5vw;bottom:8vh;text-align:right}
+  #theme{position:fixed;right:4vw;top:3.2vh;z-index:40;display:flex;align-items:center;gap:7px;
+    padding:8px 14px;border:1px solid var(--line);border-radius:99px;background:transparent;
+    color:var(--ink);font-family:inherit;font-size:.6rem;letter-spacing:.18em;cursor:pointer;opacity:.7;
+    transition:opacity .3s,border-color .3s,color .3s}
+  #theme:hover,#theme:focus-visible{opacity:1;border-color:var(--rose);color:var(--rose);outline:none}
+  #theme svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.6;
+    stroke-linecap:round;stroke-linejoin:round}
+  #theme .moon,#theme .lbl-dark{display:none}
+  html[data-theme="dark"] #theme .moon,html[data-theme="dark"] #theme .lbl-dark{display:block}
+  html[data-theme="dark"] #theme .sun,html[data-theme="dark"] #theme .lbl-light{display:none}
   #load{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
-    flex-direction:column;gap:10px;background:rgba(238,240,242,.96);color:#6b6663;transition:opacity .5s}
+    flex-direction:column;gap:10px;background:var(--loadbg);color:var(--dim);transition:opacity .5s}
   #load.hidden{opacity:0;pointer-events:none}
   #load h2{font-family:Georgia,serif;font-style:italic;font-weight:400;color:var(--rose);font-size:1.8rem}
   #load p{font-size:.72rem;letter-spacing:.14em;line-height:2;text-align:center;max-width:60ch}
-  #bar{width:260px;height:3px;background:#ddd;border-radius:2px;overflow:hidden}
+  #bar{width:260px;height:3px;background:var(--bar);border-radius:2px;overflow:hidden}
   #bar i{display:block;height:100%;width:0;background:var(--rose);transition:width .2s}
   #load label{display:inline-block;margin:4px;padding:9px 18px;border-radius:99px;background:var(--rose);
     color:#fff;font-size:.7rem;letter-spacing:.16em;cursor:pointer}
   #load input{display:none}
-  #status{position:fixed;left:12px;bottom:12px;font-size:.62rem;letter-spacing:.14em;color:#a09a97;z-index:20}
+  #status{position:fixed;left:12px;bottom:12px;font-size:.62rem;letter-spacing:.14em;color:var(--faint);z-index:20}
   #hint{position:fixed;left:50%;bottom:3.5vh;transform:translateX(-50%);font-size:.66rem;letter-spacing:.26em;
-    color:#8b8684;z-index:5;pointer-events:none;animation:pulse 2.6s ease-in-out infinite}
+    color:var(--hint);z-index:5;pointer-events:none;animation:pulse 2.6s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+  @media (prefers-reduced-motion:reduce){ #hint{animation:none;opacity:.6} html,body{transition:none} }
+  /* narrow screens: icon-only toggle, and stats capped at 40vw so the two
+     columns stop colliding in the middle */
+  @media (max-width:520px){
+    #theme{padding:8px;gap:0}
+    #theme span, html[data-theme="dark"] #theme .lbl-dark{display:none}
+    .overlay{padding-top:7vh}
+    .sub{max-width:30ch;letter-spacing:.16em}
+    .stat{max-width:40vw}
+    .stat b{font-size:clamp(1.4rem,7.5vw,2.3rem)}
+    .stat span{font-size:.52rem;letter-spacing:.1em;line-height:1.6}
+    .stat.tl,.stat.tr{top:30vh}
+    .stat.bl,.stat.br{bottom:7vh}
+    #hint{bottom:2.6vh;font-size:.6rem;letter-spacing:.2em}
+  }
 </style>
+<script>
+  /* set the theme before first paint: saved choice, else OS preference */
+  (function(){
+    var saved = null;
+    try{ saved = localStorage.getItem('fc-theme'); }catch(e){}
+    document.documentElement.dataset.theme =
+      saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  })();
+</script>
 </head>
 <body>
 <div id="stage"></div>
@@ -48,6 +92,13 @@
 <div class="stat bl"><b>7</b><span>YEARS OF PROFESSIONAL EXPERIENCE</span></div>
 <div class="stat br"><b>98%</b><span>OF CLIENTS RECOMMEND US TO FRIENDS</span></div>
 <div id="hint">RÊ CHUỘT LÊN XE</div>
+
+<button id="theme" type="button" aria-label="Đổi sáng / tối">
+  <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/>
+    <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/></svg>
+  <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.4A8.6 8.6 0 1 1 9.6 4a6.9 6.9 0 0 0 10.4 10.4z"/></svg>
+  <span class="lbl-light">SÁNG</span><span class="lbl-dark">TỐI</span>
+</button>
 
 <div id="load">
   <h2>Flawless Clean</h2>
@@ -79,20 +130,39 @@
 
 const statusEl = document.getElementById('status');
 const stage = document.getElementById('stage');
+const hintEl = document.getElementById('hint');
+
+/* phones pay for every pixel and every shadow caster — trim both, keep the look */
+const MOBILE = matchMedia('(max-width:720px)').matches || matchMedia('(pointer:coarse)').matches;
+if(matchMedia('(pointer:coarse)').matches) hintEl.textContent = 'CHẠM VÀO XE';
 
 /* ---------- renderer / scene / camera ---------- */
-const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE ? 1.5 : 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;      // re-rendered only while the rig actually moves
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
 stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xeef0f2);
+
+/* ---------- themes: CSS palette above + this 3D palette stay in sync ----------
+   panel = emissive intensity of the 4 studio softboxes baked into the env map,
+   env   = multiplier on every material's envMapIntensity (dark needs more bounce) */
+const THEMES = {
+  light:{ bg:0xeef0f2, envBg:0xb8bcc0, envFloor:0xdadde0, panel:[6.0,3.5,3.0,2.0],
+          hemiSky:0xffffff, hemiGround:0xd8d4d0, hemi:0.50,
+          keyColor:0xfff4ea, keyInt:0.90, shadow:0.14, exposure:1.10, env:1.0 },
+  dark: { bg:0x101214, envBg:0x1b1f24, envFloor:0x14171a, panel:[1.7,0.9,0.75,0.45],
+          hemiSky:0x8fa4c0, hemiGround:0x0c0e10, hemi:0.26,
+          keyColor:0xffe6cf, keyInt:1.30, shadow:0.30, exposure:1.00, env:1.6 },
+};
+let curTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+const themedMats = [];   // { mat, base } — refreshed whenever the theme flips
 
 const camera = new THREE.PerspectiveCamera(32, innerWidth/innerHeight, 0.05, 200);
 const camBase = new THREE.Vector3(1.9, 3.0, 9.8);
@@ -101,28 +171,116 @@ const camOffset = { x:0, y:0 };
 let dolly = 0;
 camera.position.copy(camBase); camera.lookAt(camTarget);
 
-(function buildEnv(){
-  const env = new THREE.Scene();
-  env.background = new THREE.Color(0xb8bcc0);
-  function lp(w,h,i,x,y,z){
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshBasicMaterial({ side:THREE.DoubleSide }));
-    m.material.color.setScalar(i); m.position.set(x,y,z); m.lookAt(0,0,0); env.add(m);
+/* ---------- responsive framing ----------
+   camBase is the art-directed desktop shot. On anything narrower (phones in
+   portrait) the car would run off both edges, so we keep the same angle and
+   slide the camera back along it until car + flowers fit the viewport. */
+const camDir = camBase.clone().sub(camTarget).normalize();
+const camDist0 = camBase.distanceTo(camTarget);
+let camDist = camDist0;
+/* max share of the viewport the car may cover — portrait gets more width, less height */
+function fills(){ return innerWidth/innerHeight < 0.8 ? [0.94, 0.62] : [0.88, 0.68]; }
+/* car box in model-local units, padded by how far the sprigs reach (~0.9 world units) */
+const fitZone = { corners: (()=>{ const bx = new THREE.Box3(
+    new THREE.Vector3(-0.040,0,-0.066), new THREE.Vector3(0.040,0.044,0.066));
+  const o=[]; for(let i=0;i<8;i++) o.push(new THREE.Vector3(
+    i&1?bx.max.x:bx.min.x, i&2?bx.max.y:bx.min.y, i&4?bx.max.z:bx.min.z)); return o; })() };
+
+/* aim a touch higher in portrait so the car drops into the gap between the stat rows */
+const camAim = camTarget.clone();
+function updateAim(){
+  camAim.copy(camTarget);
+  if(innerWidth/innerHeight < 0.8) camAim.y += 0.5;
+}
+function placeCam(d){
+  camera.position.copy(camAim).addScaledVector(camDir, d);
+  camera.lookAt(camAim);
+  camera.updateMatrixWorld();               // projectedRect() reads matrixWorldInverse
+}
+function fitCamera(){
+  updateAim();
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.needsUpdate = true;
+  camDist = camDist0;
+  if(!model) return;                        // build() calls us again once the car is in
+  const [fx, fy] = fills();
+  for(let i=0;i<8;i++){
+    placeCam(camDist);
+    const r = projectedRect(fitZone);
+    const fill = Math.max((r.x1-r.x0)/innerWidth/fx, (r.y1-r.y0)/innerHeight/fy);
+    if(fill <= 1.002) break;
+    camDist *= Math.min(fill, 1.6);         // projected size ≈ 1/distance → converges in ~2 passes
   }
-  lp(14,5,6.0, 0,9,0); lp(3,10,3.5,-9,3,2); lp(3,10,3.0,9,3,-2); lp(8,3,2.0,0,2,10);
-  const fl = new THREE.Mesh(new THREE.PlaneGeometry(30,30), new THREE.MeshBasicMaterial({ color:0xdadde0 }));
+}
+
+let envTex = null;
+function buildEnv(P){
+  const env = new THREE.Scene();
+  env.background = new THREE.Color(P.envBg);
+  const geos = [], mats = [];
+  function lp(w,h,i,x,y,z){
+    const g = new THREE.PlaneGeometry(w,h), mt = new THREE.MeshBasicMaterial({ side:THREE.DoubleSide });
+    const m = new THREE.Mesh(g, mt);
+    mt.color.setScalar(i); m.position.set(x,y,z); m.lookAt(0,0,0); env.add(m);
+    geos.push(g); mats.push(mt);
+  }
+  lp(14,5,P.panel[0], 0,9,0); lp(3,10,P.panel[1],-9,3,2); lp(3,10,P.panel[2],9,3,-2); lp(8,3,P.panel[3],0,2,10);
+  const flG = new THREE.PlaneGeometry(30,30), flM = new THREE.MeshBasicMaterial({ color:P.envFloor });
+  const fl = new THREE.Mesh(flG, flM);
   fl.rotation.x = -Math.PI/2; fl.position.y = -1; env.add(fl);
+  geos.push(flG); mats.push(flM);
   const pm = new THREE.PMREMGenerator(renderer);
-  scene.environment = pm.fromScene(env, 0.04).texture; pm.dispose();
-})();
-scene.add(new THREE.HemisphereLight(0xffffff, 0xd8d4d0, 0.5));
+  const tex = pm.fromScene(env, 0.04).texture;
+  pm.dispose();
+  if(envTex) envTex.dispose();                              // the old cubemap would leak otherwise
+  envTex = tex; scene.environment = tex;
+  for(const g of geos) g.dispose();
+  for(const m of mats) m.dispose();
+}
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0xd8d4d0, 0.5);
+scene.add(hemi);
 const key = new THREE.DirectionalLight(0xfff4ea, 0.9);
 key.position.set(5,8,6); key.castShadow = true;
-key.shadow.mapSize.set(2048,2048);
+key.shadow.mapSize.set(MOBILE?1024:2048, MOBILE?1024:2048);
 key.shadow.camera.left=-8; key.shadow.camera.right=8; key.shadow.camera.top=8; key.shadow.camera.bottom=-8;
 key.shadow.bias = -0.0004;
 scene.add(key);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(80,80), new THREE.ShadowMaterial({ opacity:0.14 }));
 ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+
+/* ---------- theme switch: html[data-theme] + the whole 3D lighting rig ---------- */
+/* materials register their base envMapIntensity so a theme flip can rescale them.
+   sprigs are Object3D clones and share these materials, so registering once is enough */
+function themeMat(m, base){
+  themedMats.push({ mat:m, base });
+  m.envMapIntensity = base * THEMES[curTheme].env;
+}
+function applyTheme(name, persist){
+  curTheme = THEMES[name] ? name : 'light';
+  const P = THEMES[curTheme];
+  document.documentElement.dataset.theme = curTheme;
+  if(persist){ try{ localStorage.setItem('fc-theme', curTheme); }catch(e){} }
+  scene.background = new THREE.Color(P.bg);
+  hemi.color.setHex(P.hemiSky); hemi.groundColor.setHex(P.hemiGround); hemi.intensity = P.hemi;
+  key.color.setHex(P.keyColor); key.intensity = P.keyInt;
+  ground.material.opacity = P.shadow;
+  renderer.toneMappingExposure = P.exposure;
+  for(const t of themedMats) t.mat.envMapIntensity = t.base * P.env;
+  buildEnv(P);
+}
+applyTheme(curTheme, false);
+
+document.getElementById('theme').addEventListener('click', ()=>{
+  applyTheme(curTheme === 'dark' ? 'light' : 'dark', true);
+});
+/* follow the OS until the visitor picks a side themselves */
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e=>{
+  let saved = null; try{ saved = localStorage.getItem('fc-theme'); }catch(err){}
+  if(!saved) applyTheme(e.matches ? 'dark' : 'light', false);
+});
 
 const flowerRoot = new THREE.Group(); scene.add(flowerRoot);
 
@@ -172,7 +330,7 @@ function build(){
   model = carGltf.scene;
   model.traverse(n=>{ if(n.isMesh){ n.castShadow = true; n.receiveShadow = true;
     const ms = Array.isArray(n.material)?n.material:[n.material];
-    for(const m of ms) if(m && m.isMeshStandardMaterial) m.envMapIntensity = 1.1; } });
+    for(const m of ms) if(m && m.isMeshStandardMaterial) themeMat(m, 1.1); } });
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
   const S = 4.6 / size.z;                            // length along Z
@@ -180,7 +338,10 @@ function build(){
   box.setFromObject(model);
   const c = box.getCenter(new THREE.Vector3());
   model.position.set(-c.x, -box.min.y, -c.z);
-  model.rotation.y = -Math.PI/2 + 0.55;              // Left_door faces camera, nose to the left
+  /* Left_door faces camera, nose to the left. In portrait the side-on car would be a
+     thin strip, so swing it head-on: shorter silhouette → the fit lets it sit bigger.
+     Sprig directions come off this matrix below, so the choice must happen here. */
+  model.rotation.y = -Math.PI/2 + (innerWidth/innerHeight < 0.8 ? 1.15 : 0.55);
   scene.add(model);
   model.updateWorldMatrix(true, true);
 
@@ -208,18 +369,20 @@ function build(){
   function corners(bx){ const o=[]; for(let i=0;i<8;i++) o.push(new THREE.Vector3(
       i&1?bx.max.x:bx.min.x, i&2?bx.max.y:bx.min.y, i&4?bx.max.z:bx.min.z)); return o; }
 
+  /* sprig counts: each one is a separate draw call, so phones get a lighter bouquet */
+  const N = MOBILE ? [8,6,9] : [14,10,16];
   zones.push({ name:'left',  box:L, corners:corners(L), open:0, state:false, action:actL, sprigs:[],
-               origin:new THREE.Vector3(0.012, 0.011, 0.002), dir:new THREE.Vector3(1,0,0),  n:14 });
+               origin:new THREE.Vector3(0.012, 0.011, 0.002), dir:new THREE.Vector3(1,0,0),  n:N[0] });
   zones.push({ name:'right', box:R, corners:corners(R), open:0, state:false, action:actR, sprigs:[],
-               origin:new THREE.Vector3(-0.012,0.011, 0.002), dir:new THREE.Vector3(-1,0,0), n:10 });
+               origin:new THREE.Vector3(-0.012,0.011, 0.002), dir:new THREE.Vector3(-1,0,0), n:N[1] });
   zones.push({ name:'rear',  box:B, corners:corners(B), open:0, state:false, action:actS, sprigs:[],
-               origin:new THREE.Vector3(0, 0.016, -0.036), dir:new THREE.Vector3(0,0,-1), n:16 });
+               origin:new THREE.Vector3(0, 0.016, -0.036), dir:new THREE.Vector3(0,0,-1), n:N[2] });
 
   /* --- flowers: azalea sprigs, world space --- */
   const fscene = flowerGltf.scene;
-  fscene.traverse(n=>{ if(n.isMesh){ n.castShadow = true;
+  fscene.traverse(n=>{ if(n.isMesh){ n.castShadow = !MOBILE;   // 40 tiny shadow casters aren't worth it on a phone
     const ms = Array.isArray(n.material)?n.material:[n.material];
-    for(const m of ms) if(m){ m.side = THREE.DoubleSide; if(m.isMeshStandardMaterial) m.envMapIntensity = 0.6; } } });
+    for(const m of ms) if(m){ m.side = THREE.DoubleSide; if(m.isMeshStandardMaterial) themeMat(m, 0.6); } } });
   const fb = new THREE.Box3().setFromObject(fscene);
   const branchLen = fb.max.x;                        // ≈ 30 units, root at origin
   const SPRIG = 0.85 / branchLen;                    // sprig ≈ 0.85 world units long
@@ -256,8 +419,10 @@ function build(){
     }
   }
 
+  fitCamera();                          // now that the car exists, frame it for this viewport
+  renderer.shadowMap.needsUpdate = true;
   document.getElementById('load').classList.add('hidden');
-  statusEl.textContent = 'READY — F: MỞ TẤT CẢ';
+  statusEl.textContent = 'READY — F: MỞ TẤT CẢ · D: SÁNG/TỐI';
 }
 
 /* ---------- hover: projected zone boxes, hysteresis ---------- */
@@ -266,9 +431,20 @@ let lastInput = -9999;
 const pnow = ()=>performance.now()/1000;
 addEventListener('mousemove', e=>{ mouse.x=e.clientX; mouse.y=e.clientY; mouse.active=true; lastInput=pnow(); });
 document.addEventListener('mouseleave', ()=>{ mouse.active=false; });
-addEventListener('touchmove', e=>{ const t=e.touches[0]; mouse.x=t.clientX; mouse.y=t.clientY; mouse.active=true; lastInput=pnow(); },{passive:true});
-addEventListener('touchend', ()=>{ mouse.active=false; });
-addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='f') forceOpen = !forceOpen; });
+/* touch: a plain tap on the car counts as a hover, so phones aren't stuck with closed doors */
+let touchGen = 0;
+function touchAt(e){ const t=e.touches[0]; if(!t) return; touchGen++;
+  mouse.x=t.clientX; mouse.y=t.clientY; mouse.active=true; lastInput=pnow(); }
+addEventListener('touchstart', touchAt, {passive:true});
+addEventListener('touchmove', touchAt, {passive:true});
+/* hold the pose ~2s after the finger lifts, and let a new tap cancel that release */
+addEventListener('touchend', ()=>{ const gen = ++touchGen;
+  setTimeout(()=>{ if(gen === touchGen) mouse.active = false; }, 2200); });
+addEventListener('keydown', e=>{
+  const k = (e.key || '').toLowerCase();
+  if(k === 'f') forceOpen = !forceOpen;
+  else if(k === 'd') applyTheme(curTheme === 'dark' ? 'light' : 'dark', true);
+});
 
 let carOpen = 0, flowerT = 0, hoverState = false, lastHover = -9;
 const carZone = { corners: (()=>{ const bx = new THREE.Box3(new THREE.Vector3(-0.023,0,-0.048), new THREE.Vector3(0.023,0.029,0.048));
@@ -343,13 +519,24 @@ function animate(){
   const ny = mouse.active ? (mouse.y/innerHeight)*2-1 : 0;
   camOffset.x += (nx - camOffset.x) * damp;
   camOffset.y += (ny - camOffset.y) * damp;
-  dolly += (anyOpen*0.5 - dolly) * damp;
-  camera.position.set(camBase.x + camOffset.x*0.8, camBase.y - camOffset.y*0.4, camBase.z - dolly);
-  camera.lookAt(camTarget);
+  const zoom = camDist / camDist0;                       // keep the dolly-in proportional when pulled back
+  dolly += (anyOpen*0.5*zoom - dolly) * damp;
+  _cp.copy(camAim).addScaledVector(camDir, camDist - dolly);
+  camera.position.set(_cp.x + camOffset.x*0.8*zoom, _cp.y - camOffset.y*0.4*zoom, _cp.z);
+  camera.lookAt(camAim);
+
+  /* the shadow map only needs redrawing while the doors/sprigs are actually moving */
+  if(Math.abs(carOpen - shadowOpen) > 0.002 || Math.abs(flowerT - shadowFlower) > 0.004){
+    renderer.shadowMap.needsUpdate = true;
+    shadowOpen = carOpen; shadowFlower = flowerT;
+  }
   renderer.render(scene, camera);
 }
+let shadowOpen = -1, shadowFlower = -1;
+const _cp = new THREE.Vector3();
 animate();
-addEventListener('resize', ()=>{ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+addEventListener('resize', fitCamera);
+addEventListener('orientationchange', ()=> setTimeout(fitCamera, 250));
 </script>
 </body>
 </html>
