@@ -79,6 +79,35 @@
     document.documentElement.dataset.theme =
       saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   })();
+
+  /* The .glb files are the slow part (porsche.glb alone is ~12MB), so start both
+     downloads here instead of waiting for three.js + GLTFLoader to parse first.
+     Streamed by hand so the progress bar can move before three.js even exists. */
+  window.GLB = { buf:{}, prog:{ 'porsche.glb':0, 'azalea.glb':0 }, onprog:null };
+  window.GLB.buf['porsche.glb'] = grab('porsche.glb');
+  window.GLB.buf['azalea.glb']  = grab('azalea.glb');
+  /* under file:// fetch rejects long before the main script can attach handlers —
+     park a no-op catch so it isn't reported as an unhandled rejection */
+  for(const k in window.GLB.buf) window.GLB.buf[k].catch(function(){});
+  async function grab(name){
+    const res = await fetch('./' + name);
+    if(!res.ok) throw new Error(name + ' → HTTP ' + res.status);
+    const total = +res.headers.get('content-length') || 0;
+    if(!res.body || !total) return res.arrayBuffer();      // no stream: plain buffer, no progress
+    const reader = res.body.getReader(), chunks = [];
+    let got = 0;
+    for(;;){
+      const { done, value } = await reader.read();
+      if(done) break;
+      chunks.push(value); got += value.length;
+      window.GLB.prog[name] = got/total;
+      if(window.GLB.onprog) window.GLB.onprog();
+    }
+    const out = new Uint8Array(got);
+    let at = 0;
+    for(const c of chunks){ out.set(c, at); at += c.length; }
+    return out.buffer;
+  }
 </script>
 </head>
 <body>
@@ -293,15 +322,17 @@ function rnd(a,b){ return a+Math.random()*(b-a); }
 const loader = new THREE.GLTFLoader();
 let carGltf = null, flowerGltf = null;
 const bar = document.querySelector('#bar i');
-let prog = { car:0, flower:0 };
-function setProg(){ bar.style.width = Math.round((prog.car*0.85 + prog.flower*0.15)*100) + '%'; }
-
-function loadURL(url, key){
-  return new Promise((res, rej)=>{
-    loader.load(url, g=>res(g), e=>{ if(e.total){ prog[key] = e.loaded/e.total; setProg(); } }, rej);
-  });
+/* the download itself was kicked off in <head>; here we only track it and parse */
+function setProg(){
+  const p = GLB.prog;
+  bar.style.width = Math.round((p['porsche.glb']*0.85 + p['azalea.glb']*0.15)*100) + '%';
 }
-Promise.all([ loadURL('./porsche.glb','car'), loadURL('./azalea.glb','flower') ])
+GLB.onprog = setProg; setProg();
+
+function parseGLB(name){
+  return GLB.buf[name].then(buf => new Promise((res, rej)=> loader.parse(buf, '', res, rej)));
+}
+Promise.all([ parseGLB('porsche.glb'), parseGLB('azalea.glb') ])
   .then(([c,f])=>{ carGltf = c; flowerGltf = f; build(); })
   .catch(()=>{
     document.getElementById('loadmsg').style.display = 'none';

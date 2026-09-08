@@ -23,6 +23,21 @@ Dark mode:
     - CSS   :root  /  html[data-theme="dark"]   (đầu file)
     - 3D    THEMES.light / THEMES.dark          (đầu <script>)
 
+Hiệu năng:
+  - 2 file .glb được fetch ngay trong <head> (window.GLB), không chờ three.js
+    load xong → thanh tiến trình chạy sớm hơn ~0.5-1s.
+  - MOBILE (≤720px hoặc pointer:coarse): pixelRatio 1.5, shadow map 1024,
+    PCFShadowMap, 23 nhánh hoa (desktop 40), hoa không đổ bóng.
+  - Shadow map chỉ render lại khi cửa/hoa đang chuyển động (autoUpdate = false).
+  - CHƯA LÀM: porsche.glb 11.9MB mà texture chỉ 1.7MB — ~10MB là geometry thô.
+    Nén Draco/meshopt sẽ còn ~2-3MB (cần vendor thêm decoder vào ./lib).
+
+Mobile:
+  fitCamera() tự lùi camera dọc theo đúng góc desktop cho tới khi xe + hoa
+  vừa khung (FILL_X/FILL_Y trong fills()). Portrait (aspect < 0.8) còn quay
+  xe chếch về camera (rotation.y +1.15 thay vì +0.55) cho bóng xe ngắn lại,
+  và ngắm cao hơn 0.5 để xe rơi vào khoảng trống giữa 2 hàng số liệu.
+
 Tinh chỉnh trong index.html:
   SPRIG = 0.85 / branchLen   → cỡ nhánh hoa
   kDoor 1.9 / 1.5          → tốc độ mở / đóng cửa (nhỏ = chậm)
