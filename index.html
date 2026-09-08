@@ -90,8 +90,9 @@
   /* The .glb files are the slow part (porsche.glb alone is ~12MB), so start both
      downloads here instead of waiting for three.js + GLTFLoader to parse first.
      Streamed by hand so the progress bar can move before three.js even exists. */
-  window.GLB = { buf:{}, prog:{ 'porsche.glb':0, 'azalea.glb':0 }, onprog:null };
+  window.GLB = { buf:{}, prog:{ 'porsche.glb':0, 'lotus.glb':0, 'azalea.glb':0 }, onprog:null };
   window.GLB.buf['porsche.glb'] = grab('porsche.glb');
+  window.GLB.buf['lotus.glb']   = grab('lotus.glb');
   window.GLB.buf['azalea.glb']  = grab('azalea.glb');
   /* under file:// fetch rejects long before the main script can attach handlers —
      park a no-op catch so it isn't reported as an unhandled rejection */
@@ -139,12 +140,13 @@
 <div id="load">
   <h2>Flawless Clean</h2>
   <div id="bar"><i></i></div>
-  <p id="loadmsg">ĐANG TẢI porsche.glb + azalea.glb …</p>
+  <p id="loadmsg">ĐANG TẢI porsche.glb + lotus.glb + azalea.glb …</p>
   <div id="fallback" style="display:none">
     <p>KHÔNG FETCH ĐƯỢC FILE (MỞ TRỰC TIẾP file:// BỊ CHẶN).<br>
     CHẠY <b>python3 -m http.server</b> TRONG THƯ MỤC NÀY, HOẶC THẢ TAY 2 FILE:</p>
     <label>porsche.glb<input type="file" id="pickCar" accept=".glb"></label>
     <label>azalea.glb<input type="file" id="pickFlower" accept=".glb"></label>
+    <label>lotus.glb<input type="file" id="pickLotus" accept=".glb"></label>
   </div>
 </div>
 <div id="status"></div>
@@ -334,20 +336,21 @@ function rnd(a,b){ return a+Math.random()*(b-a); }
 
 /* ---------- loading (fetch → fallback to manual pick) ---------- */
 const loader = new THREE.GLTFLoader();
-let carGltf = null, flowerGltf = null;
+let carGltf = null, flowerGltf = null, lotusGltf = null;
 const bar = document.querySelector('#bar i');
-/* the download itself was kicked off in <head>; here we only track it and parse */
+/* the download itself was kicked off in <head>; here we only track it and parse.
+   weights ≈ each file's share of the ~19MB total, so the bar moves honestly */
 function setProg(){
   const p = GLB.prog;
-  bar.style.width = Math.round((p['porsche.glb']*0.85 + p['azalea.glb']*0.15)*100) + '%';
+  bar.style.width = Math.round((p['porsche.glb']*0.66 + p['lotus.glb']*0.25 + p['azalea.glb']*0.09)*100) + '%';
 }
 GLB.onprog = setProg; setProg();
 
 function parseGLB(name){
   return GLB.buf[name].then(buf => new Promise((res, rej)=> loader.parse(buf, '', res, rej)));
 }
-Promise.all([ parseGLB('porsche.glb'), parseGLB('azalea.glb') ])
-  .then(([c,f])=>{ carGltf = c; flowerGltf = f; build(); })
+Promise.all([ parseGLB('porsche.glb'), parseGLB('azalea.glb'), parseGLB('lotus.glb') ])
+  .then(([c,f,l])=>{ carGltf = c; flowerGltf = f; lotusGltf = l; build(); })
   .catch(()=>{
     document.getElementById('loadmsg').style.display = 'none';
     document.getElementById('fallback').style.display = 'block';
@@ -357,13 +360,13 @@ function pick(id, key){
     const f = e.target.files[0]; if(!f) return;
     const r = new FileReader();
     r.onload = ()=> loader.parse(r.result, '', g=>{
-      if(key==='car') carGltf = g; else flowerGltf = g;
-      if(carGltf && flowerGltf) build();
+      if(key==='car') carGltf = g; else if(key==='flower') flowerGltf = g; else lotusGltf = g;
+      if(carGltf && flowerGltf) build();          // lotus is optional: sprigs alone still work
     }, err=> statusEl.textContent = 'LỖI PARSE: ' + err.message);
     r.readAsArrayBuffer(f);
   });
 }
-pick('pickCar','car'); pick('pickFlower','flower');
+pick('pickCar','car'); pick('pickFlower','flower'); pick('pickLotus','lotus');
 
 /* ---------- build scene from the two assets ---------- */
 let model, mixer;
@@ -413,14 +416,16 @@ function build(){
   function corners(bx){ const o=[]; for(let i=0;i<8;i++) o.push(new THREE.Vector3(
       i&1?bx.max.x:bx.min.x, i&2?bx.max.y:bx.min.y, i&4?bx.max.z:bx.min.z)); return o; }
 
-  /* sprig counts: each one is a separate draw call, so phones get a lighter bouquet */
-  const N = MOBILE ? [8,6,9] : [14,10,16];
-  zones.push({ name:'left',  box:L, corners:corners(L), open:0, state:false, action:actL, sprigs:[],
-               origin:new THREE.Vector3(0.012, 0.011, 0.002), dir:new THREE.Vector3(1,0,0),  n:N[0] });
-  zones.push({ name:'right', box:R, corners:corners(R), open:0, state:false, action:actR, sprigs:[],
-               origin:new THREE.Vector3(-0.012,0.011, 0.002), dir:new THREE.Vector3(-1,0,0), n:N[1] });
-  zones.push({ name:'rear',  box:B, corners:corners(B), open:0, state:false, action:actS, sprigs:[],
-               origin:new THREE.Vector3(0, 0.016, -0.036), dir:new THREE.Vector3(0,0,-1), n:N[2] });
+  /* sprig counts: each one is a separate draw call, so phones get a lighter bouquet.
+     nL = hero lotus blooms, which cost 39 draw calls each — hence far fewer. */
+  const N  = MOBILE ? [16,12,18] : [28,20,32];
+  const NL = MOBILE ? [1,1,1]    : [3,2,3];
+  zones.push({ name:'left',  box:L, corners:corners(L), open:0, state:false, action:actL, sprigs:[], lotuses:[],
+               origin:new THREE.Vector3(0.012, 0.011, 0.002), dir:new THREE.Vector3(1,0,0),  n:N[0], nL:NL[0] });
+  zones.push({ name:'right', box:R, corners:corners(R), open:0, state:false, action:actR, sprigs:[], lotuses:[],
+               origin:new THREE.Vector3(-0.012,0.011, 0.002), dir:new THREE.Vector3(-1,0,0), n:N[1], nL:NL[1] });
+  zones.push({ name:'rear',  box:B, corners:corners(B), open:0, state:false, action:actS, sprigs:[], lotuses:[],
+               origin:new THREE.Vector3(0, 0.016, -0.036), dir:new THREE.Vector3(0,0,-1), n:N[2], nL:NL[2] });
 
   /* --- flowers: azalea sprigs, world space --- */
   const fscene = flowerGltf.scene;
@@ -430,6 +435,36 @@ function build(){
   const fb = new THREE.Box3().setFromObject(fscene);
   const branchLen = fb.max.x;                        // ≈ 30 units, root at origin
   const SPRIG = 0.85 / branchLen;                    // sprig ≈ 0.85 world units long
+
+  /* --- lotus: the hero bloom. Ships white, which vanishes against a white car,
+         so the petals get tinted to a lotus pink that sits with the azaleas.
+         Its 5s clip is node-based (no skinning), so a plain deep clone plus one
+         mixer per instance is enough to scrub each bloom independently. --- */
+  const lotusClip = lotusGltf && lotusGltf.animations[0];
+  let lotusProto = null, lotusScale = 1;
+  const lotusPivot = new THREE.Vector3();
+  if(lotusGltf && lotusClip){
+    lotusProto = lotusGltf.scene;
+    lotusProto.traverse(n=>{ if(n.isMesh){
+      n.castShadow = false;                          // 39 meshes per bloom: not worth the shadow pass
+      const ms = Array.isArray(n.material)?n.material:[n.material];
+      for(const m of ms){
+        if(!m) continue;
+        m.side = THREE.DoubleSide;
+        if(m.name === 'wire_135110008.002') m.color.setHex(0x76895f);   // the little pad underneath
+        else m.color.setHex(0xd9556f);                                   // petals
+        /* stock roughness is 0.29, which blew the thin petals out to near-white
+           under the studio env (measured rgb(235,223,223)) — matte them down and
+           damp the reflections so the pink actually reads */
+        if(m.isMeshStandardMaterial){ m.roughness = 0.82; m.metalness = 0; themeMat(m, 0.3); }
+      }
+    }});
+    lotusProto.updateWorldMatrix(true, true);
+    const lb = new THREE.Box3().setFromObject(lotusProto);
+    const across = Math.max(lb.max.x - lb.min.x, lb.max.z - lb.min.z);
+    lotusScale = 0.80 / across;                      // ≈0.80 wide closed, ≈1.07 at full bloom
+    lotusPivot.set(-(lb.min.x + lb.max.x)/2, -lb.min.y, -(lb.min.z + lb.max.z)/2);
+  }
 
   const up = new THREE.Vector3(0,1,0);
   for(const z of zones){
@@ -460,6 +495,36 @@ function build(){
       g.scale.setScalar(0.0001);
       flowerRoot.add(g);
       z.sprigs.push(g);
+    }
+
+    /* hero lotus blooms: fewer, much bigger, each unfurling on its own clock */
+    for(let i=0; i<(lotusProto ? z.nL : 0); i++){
+      const inst = lotusProto.clone(true);
+      inst.position.copy(lotusPivot);                // pivot on the base centre, not the bbox centre
+      const g = new THREE.Group();
+      g.add(inst);
+      g.rotation.order = 'YXZ';
+      g.rotation.y = rnd(0, Math.PI*2);
+      g.rotation.z = rnd(-0.30, 0.30);               // lean out of the opening
+      g.rotation.x = rnd(-0.30, 0.30);
+      const rootW = originW.clone()
+        .addScaledVector(sideW, rnd(-0.45, 0.45))
+        .addScaledVector(dirW, rnd(0.05, 0.30));
+      rootW.y += rnd(-0.06, 0.20);
+      g.position.copy(rootW);
+      g.scale.setScalar(0.0001);
+      flowerRoot.add(g);
+      /* one mixer per clone: the clip drives node transforms, resolved by name */
+      const mix = new THREE.AnimationMixer(inst);
+      const act = mix.clipAction(lotusClip);
+      act.play(); act.paused = true; act.time = 0;
+      z.lotuses.push({ group:g, mix, act,
+        scale: lotusScale * rnd(0.85, 1.35) * (z.name==='rear' ? 1.2 : 1),
+        threshold: 0.05 + Math.random()*0.35,        // staggered so they cascade open
+        spin: rnd(-0.5, 0.5),
+        baseRot: g.rotation.clone(),
+        start: rootW.clone(),
+        end: rootW.clone().addScaledVector(dirW, rnd(0.12, 0.34)).setY(rootW.y + rnd(0.04, 0.16)) });
     }
   }
 
@@ -563,6 +628,16 @@ function animate(){
         const w = Math.sin(t*Math.PI*2) * (1 - t) * 0.08 * (active ? 1 : 0);
         g.rotation.x = g.userData.baseRot.x + w;
         g.rotation.z = g.userData.baseRot.z + w*0.5;
+      }
+      /* lotus: grows in, then its own clip unfurls the petals over the same window */
+      for(const L of z.lotuses){
+        const t = clamp01((flowerT - L.threshold) / 0.65);
+        const e = ease(t);
+        L.group.scale.setScalar(Math.max(e * L.scale, 0.0001));
+        L.group.position.lerpVectors(L.start, L.end, e);
+        L.group.rotation.y = L.baseRot.y + e * L.spin;
+        L.act.time = e * L.act.getClip().duration;
+        L.mix.update(0);
       }
     }
     renderer.domElement.style.cursor = hovered ? 'pointer' : '';

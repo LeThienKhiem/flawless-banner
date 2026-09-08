@@ -1,5 +1,5 @@
-FLAWLESS CLEAN — banner 3D tương tác (Porsche 911 × Azalea)
-=============================================================
+FLAWLESS CLEAN — banner 3D tương tác (Porsche 911 × Azalea × Sen)
+=================================================================
 Chạy:
   cd flawless-banner
   python3 -m http.server 8080        (hoặc: npx serve)
@@ -24,12 +24,34 @@ Dark mode:
     - CSS   :root  /  html[data-theme="dark"]   (đầu file)
     - 3D    THEMES.light / THEMES.dark          (đầu <script>)
 
+Hoa:
+  - azalea.glb  → nhánh hoa nhỏ, rải nhiều: 80 nhánh (desktop) / 46 (mobile).
+  - lotus.glb   → BÔNG SEN CHỦ, to (≈1.2 đơn vị = ~27% chiều dài xe), tự nở
+    bằng chính clip 5s của nó (node-based, không skin) — mỗi bông một
+    AnimationMixer riêng, scrub theo flowerT với threshold lệch nhau nên nở
+    so le thành đợt. 8 bông (desktop) / 3 (mobile).
+  - Sen gốc màu trắng, chìm hẳn vào xe trắng → petals được nhuộm 0xd9556f,
+    roughness đẩy lên 0.82 (gốc 0.29 làm cánh cháy trắng, đo được
+    rgb(235,223,223)); sau khi sửa đo lại rgb(229,186,192).
+
+lotus.glb được sinh từ file gốc, ĐỪNG sửa tay:
+  node tools/strip-lotus.js ~/Documents/flawless-banner/lotus_flower_blooming_animation.glb lotus.glb
+  File gốc 19.73MB / 367k tam giác cho MỘT bông, trong đó 209k tam giác
+  (~14MB) là cục nhân siêu dày nằm lọt trong lòng cánh — bỏ nó chỉ đổi 1.122
+  pixel (0.15% canvas) ở cỡ zoom sát. Script bỏ nhân + đóng gói lại từng
+  accessor (export nhồi 290 accessor vào 8 bufferView dùng chung nên bỏ
+  accessor không bỏ được byte) → 4.76MB / 158k tam giác. Không quantize,
+  không re-encode: phần giữ lại copy nguyên byte.
+
 Hiệu năng:
-  - 2 file .glb được fetch ngay trong <head> (window.GLB), không chờ three.js
-    load xong → thanh tiến trình chạy sớm hơn ~0.5-1s.
+  - 3 file .glb được fetch ngay trong <head> (window.GLB), không chờ three.js
+    load xong → thanh tiến trình chạy sớm hơn ~0.5-1s. Tổng tải 18.9MB.
   - MOBILE (≤720px hoặc pointer:coarse): pixelRatio 1.5, shadow map 1024,
-    PCFShadowMap, 23 nhánh hoa (desktop 40), hoa không đổ bóng.
+    PCFShadowMap, ít hoa hơn, hoa không đổ bóng (sen không đổ bóng ở mọi máy
+    — 39 mesh mỗi bông, không đáng cho shadow pass).
   - Shadow map chỉ render lại khi cửa/hoa đang chuyển động (autoUpdate = false).
+  - Đo trên MacBook, viewport 1440×810, nở hết: 477 draw call, 2.17M tam giác,
+    2.2ms/frame (ngân sách 60fps là 16.7ms). Toàn bộ mixer của sen: 0.07ms.
   - CHƯA LÀM: porsche.glb 11.9MB mà texture chỉ 1.7MB — ~10MB là geometry thô.
     Nén Draco/meshopt sẽ còn ~2-3MB (cần vendor thêm decoder vào ./lib).
 
