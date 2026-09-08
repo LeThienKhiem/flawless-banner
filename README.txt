@@ -26,7 +26,7 @@ Dark mode:
 
 Hoa:
   - azalea.glb  → nhánh hoa nhỏ, rải nhiều: 80 nhánh (desktop) / 46 (mobile).
-  - lotus.glb   → BÔNG SEN CHỦ, to (≈1.2 đơn vị = ~27% chiều dài xe), tự nở
+  - lotus.glb   → BÔNG SEN, cỡ ≈0.6 đơn vị (~13% chiều dài xe), tự nở
     bằng chính clip 5s của nó (node-based, không skin) — mỗi bông một
     AnimationMixer riêng, scrub theo flowerT với threshold lệch nhau nên nở
     so le thành đợt. 8 bông (desktop) / 3 (mobile).

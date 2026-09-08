@@ -462,7 +462,7 @@ function build(){
     lotusProto.updateWorldMatrix(true, true);
     const lb = new THREE.Box3().setFromObject(lotusProto);
     const across = Math.max(lb.max.x - lb.min.x, lb.max.z - lb.min.z);
-    lotusScale = 0.80 / across;                      // ≈0.80 wide closed, ≈1.07 at full bloom
+    lotusScale = 0.40 / across;                      // ≈0.40 wide closed, ≈0.54 at full bloom
     lotusPivot.set(-(lb.min.x + lb.max.x)/2, -lb.min.y, -(lb.min.z + lb.max.z)/2);
   }
 
