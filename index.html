@@ -16,8 +16,15 @@
     --loadbg:rgba(16,18,20,.96); --bar:#2a2d30; --line:rgba(236,234,232,.22);
   }
   *{margin:0;padding:0;box-sizing:border-box}
+  /* touch hygiene: a tap on the car must not select the headline (that blue/purple
+     wash over the whole screen), pop a callout, flash a tap highlight, or be read
+     as a double-tap-to-zoom — the latter swallowed every second tap. */
   html,body{height:100%;overflow:hidden;background:var(--bg);font-family:Verdana,Arial,sans-serif;
-    transition:background .45s ease}
+    transition:background .45s ease;
+    -webkit-user-select:none;user-select:none;
+    -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
+    touch-action:manipulation}
+  ::selection{background:transparent}
   #stage{position:fixed;inset:0}
   canvas{display:block}
   .overlay{position:fixed;inset:0;pointer-events:none;z-index:5;
@@ -163,7 +170,7 @@ const hintEl = document.getElementById('hint');
 
 /* phones pay for every pixel and every shadow caster — trim both, keep the look */
 const MOBILE = matchMedia('(max-width:720px)').matches || matchMedia('(pointer:coarse)').matches;
-if(matchMedia('(pointer:coarse)').matches) hintEl.textContent = 'CHẠM VÀO XE';
+if(MOBILE) hintEl.textContent = 'CHẠM VÀO XE';
 
 /* ---------- renderer / scene / camera ---------- */
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
@@ -468,20 +475,23 @@ let lastInput = -9999;
 const pnow = ()=>performance.now()/1000;
 addEventListener('mousemove', e=>{ mouse.x=e.clientX; mouse.y=e.clientY; mouse.active=true; lastInput=pnow(); });
 document.addEventListener('mouseleave', ()=>{ mouse.active=false; });
-/* Touch has no hover, so it gets a latch instead: tap the car to bloom, tap again to
-   close, tap off the car to close. mouse.active stays false so the hover path never
-   fights the latch — only mouse.x/y are borrowed for the hit test. */
-const COARSE = matchMedia('(pointer:coarse)').matches;
-let touchLatch = false;
-if(COARSE) addEventListener('touchend', e=>{
-  const t = e.changedTouches[0];
-  if(!t || !model) return;
-  if(e.target.closest && e.target.closest('#theme')) return;     // the theme button is its own thing
+/* A phone has no hover, so mobile gets a latch instead: tap the car to bloom, tap
+   again to close, tap off the car to close. pointerup covers finger, stylus and a
+   mouse in a narrow window alike — the hover path is switched off for MOBILE below,
+   so the two never fight over the doors. */
+let touchLatch = false, lastTap = -9;
+if(MOBILE) addEventListener('pointerup', e=>{
+  if(!model) return;
+  if(e.target && e.target.closest && e.target.closest('#theme')) return;   // button does its own job
+  /* one tap must count once: if a browser also emits a compatibility pointer event,
+     toggling twice would look exactly like "the second tap does nothing" */
+  if(pnow() - lastTap < 0.25) return;
+  lastTap = pnow();
   lastInput = pnow();
-  mouse.x = t.clientX; mouse.y = t.clientY;
+  mouse.x = e.clientX; mouse.y = e.clientY;
   touchLatch = inRect(projectedRect(carZone), 0.12) ? !touchLatch : false;
   hintEl.textContent = touchLatch ? 'CHẠM LẦN NỮA ĐỂ ĐÓNG' : 'CHẠM VÀO XE';
-}, {passive:true});
+});
 addEventListener('keydown', e=>{
   const k = (e.key || '').toLowerCase();
   if(k === 'f') forceOpen = !forceOpen;
@@ -518,10 +528,12 @@ function animate(){
 
   if(model){
     const idle = (pnow() - lastInput) > 4;
-    /* ONE zone: the whole car. Enter at 3% pad, leave at 15% pad + 0.4s grace */
+    /* ONE zone: the whole car. Enter at 3% pad, leave at 15% pad + 0.4s grace.
+       Skipped on MOBILE — there the tap latch owns the doors. */
     const rect = projectedRect(carZone);
     let hovered = false;
-    if(mouse.active && inRect(rect, 0.03)){ hoverState = true; lastHover = time; hovered = true; }
+    if(MOBILE){ hoverState = false; }
+    else if(mouse.active && inRect(rect, 0.03)){ hoverState = true; lastHover = time; hovered = true; }
     else if(hoverState){
       const still = mouse.active && inRect(rect, 0.15);
       if(still){ lastHover = time; hovered = true; }
