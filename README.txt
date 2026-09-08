@@ -10,6 +10,7 @@ Không cần internet: three.js nằm trong ./lib.
 Tương tác:
   - Rê chuột lên XE   → 2 cửa mở chậm + cánh gió bung, hoa nở dần nhẹ nhàng (~1.5s), hơi vượt rồi lắng
   - Rời chuột 0.4s   → cửa từ từ đóng, hoa từ từ thu lại
+  - Cảm ứng: chạm vào xe → nở; chạm lần nữa (hoặc chạm ra ngoài) → đóng
   - Phím F           → mở tất cả (test)
   - Phím D / nút góc trên phải → đổi SÁNG / TỐI
   - Bỏ chuột 4s      → cửa hé nhẹ mời tương tác
@@ -33,10 +34,13 @@ Hiệu năng:
     Nén Draco/meshopt sẽ còn ~2-3MB (cần vendor thêm decoder vào ./lib).
 
 Mobile:
-  fitCamera() tự lùi camera dọc theo đúng góc desktop cho tới khi xe + hoa
-  vừa khung (FILL_X/FILL_Y trong fills()). Portrait (aspect < 0.8) còn quay
-  xe chếch về camera (rotation.y +1.15 thay vì +0.55) cho bóng xe ngắn lại,
-  và ngắm cao hơn 0.5 để xe rơi vào khoảng trống giữa 2 hàng số liệu.
+  - Landscape: giữ nguyên cú máy desktop, chỉ lùi camera nếu xe + hoa tràn mép.
+  - Portrait (aspect < 0.8): fitCamera() GIẢI ra khoảng cách sao cho THÂN XE
+    chiếm đúng BODY_FILL = 0.78 chiều ngang khung (hoa được phép tràn mép),
+    và ngắm cao hơn 0.5 để xe rơi vào khoảng trống giữa 2 hàng số liệu.
+    Muốn xe to/nhỏ hơn: sửa BODY_FILL (0.78 = 78% chiều ngang).
+  - Cảm ứng không có hover, nên dùng latch: chạm vào xe → nở, chạm lần nữa →
+    đóng, chạm ra ngoài xe → đóng. Chữ gợi ý ở đáy đổi theo trạng thái.
 
 Tinh chỉnh trong index.html:
   SPRIG = 0.85 / branchLen   → cỡ nhánh hoa

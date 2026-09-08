@@ -207,8 +207,11 @@ camera.position.copy(camBase); camera.lookAt(camTarget);
 const camDir = camBase.clone().sub(camTarget).normalize();
 const camDist0 = camBase.distanceTo(camTarget);
 let camDist = camDist0;
-/* max share of the viewport the car may cover — portrait gets more width, less height */
-function fills(){ return innerWidth/innerHeight < 0.8 ? [0.94, 0.62] : [0.88, 0.68]; }
+const PORTRAIT = ()=> innerWidth/innerHeight < 0.8;
+/* Landscape leaves the art-directed shot alone and only pulls back if car + sprigs
+   would run off the edges. Portrait instead SOLVES for a size: the car body spans
+   BODY_FILL of the width, sprigs allowed to spill past the edges. */
+const BODY_FILL = 0.78, BODY_FILL_Y = 0.42;
 /* car box in model-local units, padded by how far the sprigs reach (~0.9 world units) */
 const fitZone = { corners: (()=>{ const bx = new THREE.Box3(
     new THREE.Vector3(-0.040,0,-0.066), new THREE.Vector3(0.040,0.044,0.066));
@@ -219,7 +222,7 @@ const fitZone = { corners: (()=>{ const bx = new THREE.Box3(
 const camAim = camTarget.clone();
 function updateAim(){
   camAim.copy(camTarget);
-  if(innerWidth/innerHeight < 0.8) camAim.y += 0.5;
+  if(PORTRAIT()) camAim.y += 0.5;
 }
 function placeCam(d){
   camera.position.copy(camAim).addScaledVector(camDir, d);
@@ -234,13 +237,17 @@ function fitCamera(){
   renderer.shadowMap.needsUpdate = true;
   camDist = camDist0;
   if(!model) return;                        // build() calls us again once the car is in
-  const [fx, fy] = fills();
-  for(let i=0;i<8;i++){
+  const portrait = PORTRAIT();
+  const zone = portrait ? carZone : fitZone;
+  const fx = portrait ? BODY_FILL : 0.88;
+  const fy = portrait ? BODY_FILL_Y : 0.68;
+  for(let i=0;i<12;i++){
     placeCam(camDist);
-    const r = projectedRect(fitZone);
+    const r = projectedRect(zone);
     const fill = Math.max((r.x1-r.x0)/innerWidth/fx, (r.y1-r.y0)/innerHeight/fy);
-    if(fill <= 1.002) break;
-    camDist *= Math.min(fill, 1.6);         // projected size ≈ 1/distance → converges in ~2 passes
+    /* landscape: only ever pull back. portrait: solve both ways for the exact size */
+    if(portrait ? Math.abs(fill - 1) < 0.004 : fill <= 1.002) break;
+    camDist *= Math.min(Math.max(fill, 0.55), 1.6);   // size ≈ 1/distance → converges in ~2 passes
   }
 }
 
@@ -369,10 +376,9 @@ function build(){
   box.setFromObject(model);
   const c = box.getCenter(new THREE.Vector3());
   model.position.set(-c.x, -box.min.y, -c.z);
-  /* Left_door faces camera, nose to the left. In portrait the side-on car would be a
-     thin strip, so swing it head-on: shorter silhouette → the fit lets it sit bigger.
-     Sprig directions come off this matrix below, so the choice must happen here. */
-  model.rotation.y = -Math.PI/2 + (innerWidth/innerHeight < 0.8 ? 1.15 : 0.55);
+  /* Left_door faces camera, nose to the left — same angle in portrait, because the
+     length of the car reading right across the frame is the whole shot. */
+  model.rotation.y = -Math.PI/2 + 0.55;
   scene.add(model);
   model.updateWorldMatrix(true, true);
 
@@ -462,15 +468,20 @@ let lastInput = -9999;
 const pnow = ()=>performance.now()/1000;
 addEventListener('mousemove', e=>{ mouse.x=e.clientX; mouse.y=e.clientY; mouse.active=true; lastInput=pnow(); });
 document.addEventListener('mouseleave', ()=>{ mouse.active=false; });
-/* touch: a plain tap on the car counts as a hover, so phones aren't stuck with closed doors */
-let touchGen = 0;
-function touchAt(e){ const t=e.touches[0]; if(!t) return; touchGen++;
-  mouse.x=t.clientX; mouse.y=t.clientY; mouse.active=true; lastInput=pnow(); }
-addEventListener('touchstart', touchAt, {passive:true});
-addEventListener('touchmove', touchAt, {passive:true});
-/* hold the pose ~2s after the finger lifts, and let a new tap cancel that release */
-addEventListener('touchend', ()=>{ const gen = ++touchGen;
-  setTimeout(()=>{ if(gen === touchGen) mouse.active = false; }, 2200); });
+/* Touch has no hover, so it gets a latch instead: tap the car to bloom, tap again to
+   close, tap off the car to close. mouse.active stays false so the hover path never
+   fights the latch — only mouse.x/y are borrowed for the hit test. */
+const COARSE = matchMedia('(pointer:coarse)').matches;
+let touchLatch = false;
+if(COARSE) addEventListener('touchend', e=>{
+  const t = e.changedTouches[0];
+  if(!t || !model) return;
+  if(e.target.closest && e.target.closest('#theme')) return;     // the theme button is its own thing
+  lastInput = pnow();
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  touchLatch = inRect(projectedRect(carZone), 0.12) ? !touchLatch : false;
+  hintEl.textContent = touchLatch ? 'CHẠM LẦN NỮA ĐỂ ĐÓNG' : 'CHẠM VÀO XE';
+}, {passive:true});
 addEventListener('keydown', e=>{
   const k = (e.key || '').toLowerCase();
   if(k === 'f') forceOpen = !forceOpen;
@@ -516,11 +527,11 @@ function animate(){
       if(still){ lastHover = time; hovered = true; }
       else if(time - lastHover > 0.4) hoverState = false;
     }
-    const active = hoverState || forceOpen;
+    const active = hoverState || forceOpen || touchLatch;
 
     /* doors: slow both ways */
     let target = active ? 1 : 0;
-    if(idle && !mouse.active && !forceOpen) target = 0.1 + Math.sin(time*0.7)*0.07;
+    if(idle && !mouse.active && !active) target = 0.1 + Math.sin(time*0.7)*0.07;
     const kDoor = target > carOpen ? 1.9 : 1.5;
     carOpen += (target - carOpen) * (1 - Math.exp(-dt*kDoor));
     anyOpen = carOpen;
