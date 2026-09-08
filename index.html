@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flawless Clean — Porsche × Azalea</title>
+<style>
+  :root{ --ink:#1c1a1a; --rose:#c94f63; --bg:#eef0f2; }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:var(--bg);font-family:Verdana,Arial,sans-serif}
+  #stage{position:fixed;inset:0}
+  canvas{display:block}
+  .overlay{position:fixed;inset:0;pointer-events:none;z-index:5;
+    display:flex;flex-direction:column;align-items:center;padding-top:5vh;color:var(--ink)}
+  h1{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-style:italic;
+    font-size:clamp(2.2rem,6.5vw,4.8rem);line-height:1.04;letter-spacing:.04em;text-align:center;color:var(--rose)}
+  .sub{margin-top:1.8vh;max-width:52ch;text-align:center;font-size:clamp(.66rem,1vw,.82rem);
+    letter-spacing:.22em;line-height:1.9;color:#4a4645}
+  .stat{position:fixed;pointer-events:none;z-index:5;max-width:220px}
+  .stat b{display:block;font-family:Georgia,serif;font-weight:400;font-size:clamp(2rem,4.4vw,3.6rem);color:var(--ink)}
+  .stat span{font-size:.62rem;letter-spacing:.14em;line-height:1.7;color:#6b6663}
+  .stat.tl{left:5vw;top:34vh} .stat.tr{right:5vw;top:34vh;text-align:right}
+  .stat.bl{left:5vw;bottom:8vh} .stat.br{right:5vw;bottom:8vh;text-align:right}
+  #load{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:10px;background:rgba(238,240,242,.96);color:#6b6663;transition:opacity .5s}
+  #load.hidden{opacity:0;pointer-events:none}
+  #load h2{font-family:Georgia,serif;font-style:italic;font-weight:400;color:var(--rose);font-size:1.8rem}
+  #load p{font-size:.72rem;letter-spacing:.14em;line-height:2;text-align:center;max-width:60ch}
+  #bar{width:260px;height:3px;background:#ddd;border-radius:2px;overflow:hidden}
+  #bar i{display:block;height:100%;width:0;background:var(--rose);transition:width .2s}
+  #load label{display:inline-block;margin:4px;padding:9px 18px;border-radius:99px;background:var(--rose);
+    color:#fff;font-size:.7rem;letter-spacing:.16em;cursor:pointer}
+  #load input{display:none}
+  #status{position:fixed;left:12px;bottom:12px;font-size:.62rem;letter-spacing:.14em;color:#a09a97;z-index:20}
+  #hint{position:fixed;left:50%;bottom:3.5vh;transform:translateX(-50%);font-size:.66rem;letter-spacing:.26em;
+    color:#8b8684;z-index:5;pointer-events:none;animation:pulse 2.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div class="overlay">
+  <h1>Flawless Clean<br>For Your Car</h1>
+  <p class="sub">WE BRING YOUR CAR BACK TO LIFE WITH EXPERT DETAILING AND ECO-FRIENDLY PRODUCTS</p>
+</div>
+<div class="stat tl"><b>15K+</b><span>HAPPY CUSTOMERS WHO TRUST US WITH THEIR VEHICLES</span></div>
+<div class="stat tr"><b>500+</b><span>CARS SERVICED EVERY MONTH WITH HIGHEST QUALITY STANDARDS</span></div>
+<div class="stat bl"><b>7</b><span>YEARS OF PROFESSIONAL EXPERIENCE</span></div>
+<div class="stat br"><b>98%</b><span>OF CLIENTS RECOMMEND US TO FRIENDS</span></div>
+<div id="hint">RÊ CHUỘT LÊN XE</div>
+
+<div id="load">
+  <h2>Flawless Clean</h2>
+  <div id="bar"><i></i></div>
+  <p id="loadmsg">ĐANG TẢI porsche.glb + azalea.glb …</p>
+  <div id="fallback" style="display:none">
+    <p>KHÔNG FETCH ĐƯỢC FILE (MỞ TRỰC TIẾP file:// BỊ CHẶN).<br>
+    CHẠY <b>python3 -m http.server</b> TRONG THƯ MỤC NÀY, HOẶC THẢ TAY 2 FILE:</p>
+    <label>porsche.glb<input type="file" id="pickCar" accept=".glb"></label>
+    <label>azalea.glb<input type="file" id="pickFlower" accept=".glb"></label>
+  </div>
+</div>
+<div id="status"></div>
+
+<script src="./lib/three.min.js"></script>
+<script src="./lib/GLTFLoader.js"></script>
+<script>
+/* ================================================================
+   HARDCODED for: porsche.glb (2015 911 Carrera S, Sketchfab)
+                  azalea.glb  (rhododendron branch, static, +X axis)
+   Facts from inspection:
+   - car local space: X = width (±0.02), Y = up (0..0.026), Z = length
+     (front +0.046, rear -0.045). Left_door on +X, Right_door on -X.
+   - clip "Take 001": doors open 0→45° over t∈[0,2.44], then close.
+     We scrub only the opening half. Spoiler joints ride the same clip.
+   - no trunk node: rear zone = engine bay, flowers only + spoiler.
+   - azalea: root at origin, branch runs along +X, length ≈ 30 units.
+   ================================================================ */
+
+const statusEl = document.getElementById('status');
+const stage = document.getElementById('stage');
+
+/* ---------- renderer / scene / camera ---------- */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xeef0f2);
+
+const camera = new THREE.PerspectiveCamera(32, innerWidth/innerHeight, 0.05, 200);
+const camBase = new THREE.Vector3(1.9, 3.0, 9.8);
+const camTarget = new THREE.Vector3(0, 1.45, 0);
+const camOffset = { x:0, y:0 };
+let dolly = 0;
+camera.position.copy(camBase); camera.lookAt(camTarget);
+
+(function buildEnv(){
+  const env = new THREE.Scene();
+  env.background = new THREE.Color(0xb8bcc0);
+  function lp(w,h,i,x,y,z){
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshBasicMaterial({ side:THREE.DoubleSide }));
+    m.material.color.setScalar(i); m.position.set(x,y,z); m.lookAt(0,0,0); env.add(m);
+  }
+  lp(14,5,6.0, 0,9,0); lp(3,10,3.5,-9,3,2); lp(3,10,3.0,9,3,-2); lp(8,3,2.0,0,2,10);
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(30,30), new THREE.MeshBasicMaterial({ color:0xdadde0 }));
+  fl.rotation.x = -Math.PI/2; fl.position.y = -1; env.add(fl);
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(env, 0.04).texture; pm.dispose();
+})();
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8d4d0, 0.5));
+const key = new THREE.DirectionalLight(0xfff4ea, 0.9);
+key.position.set(5,8,6); key.castShadow = true;
+key.shadow.mapSize.set(2048,2048);
+key.shadow.camera.left=-8; key.shadow.camera.right=8; key.shadow.camera.top=8; key.shadow.camera.bottom=-8;
+key.shadow.bias = -0.0004;
+scene.add(key);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(80,80), new THREE.ShadowMaterial({ opacity:0.14 }));
+ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+
+const flowerRoot = new THREE.Group(); scene.add(flowerRoot);
+
+function ease(t){ return t*t*(3-2*t); }
+function clamp01(v){ return Math.min(Math.max(v,0),1); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function rnd(a,b){ return a+Math.random()*(b-a); }
+
+/* ---------- loading (fetch → fallback to manual pick) ---------- */
+const loader = new THREE.GLTFLoader();
+let carGltf = null, flowerGltf = null;
+const bar = document.querySelector('#bar i');
+let prog = { car:0, flower:0 };
+function setProg(){ bar.style.width = Math.round((prog.car*0.85 + prog.flower*0.15)*100) + '%'; }
+
+function loadURL(url, key){
+  return new Promise((res, rej)=>{
+    loader.load(url, g=>res(g), e=>{ if(e.total){ prog[key] = e.loaded/e.total; setProg(); } }, rej);
+  });
+}
+Promise.all([ loadURL('./porsche.glb','car'), loadURL('./azalea.glb','flower') ])
+  .then(([c,f])=>{ carGltf = c; flowerGltf = f; build(); })
+  .catch(()=>{
+    document.getElementById('loadmsg').style.display = 'none';
+    document.getElementById('fallback').style.display = 'block';
+  });
+function pick(id, key){
+  document.getElementById(id).addEventListener('change', e=>{
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ()=> loader.parse(r.result, '', g=>{
+      if(key==='car') carGltf = g; else flowerGltf = g;
+      if(carGltf && flowerGltf) build();
+    }, err=> statusEl.textContent = 'LỖI PARSE: ' + err.message);
+    r.readAsArrayBuffer(f);
+  });
+}
+pick('pickCar','car'); pick('pickFlower','flower');
+
+/* ---------- build scene from the two assets ---------- */
+let model, mixer;
+const zones = [];             // { name, cornersLocal[8], open, state, action?, sprigs[] }
+let forceOpen = false;
+
+function build(){
+  /* --- car --- */
+  model = carGltf.scene;
+  model.traverse(n=>{ if(n.isMesh){ n.castShadow = true; n.receiveShadow = true;
+    const ms = Array.isArray(n.material)?n.material:[n.material];
+    for(const m of ms) if(m && m.isMeshStandardMaterial) m.envMapIntensity = 1.1; } });
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const S = 4.6 / size.z;                            // length along Z
+  model.scale.setScalar(S);
+  box.setFromObject(model);
+  const c = box.getCenter(new THREE.Vector3());
+  model.position.set(-c.x, -box.min.y, -c.z);
+  model.rotation.y = -Math.PI/2 + 0.55;              // Left_door faces camera, nose to the left
+  scene.add(model);
+  model.updateWorldMatrix(true, true);
+
+  /* --- door / spoiler animation → per-zone actions, scrubbed --- */
+  mixer = new THREE.AnimationMixer(model);
+  const clip = carGltf.animations[0];
+  const OPEN_T = 2.44;                               // peak of door swing in "Take 001"
+  function subAction(filterFn, name){
+    const tracks = clip.tracks.filter(t=>filterFn(t.name.split('.')[0]));
+    if(!tracks.length) return null;
+    const sub = new THREE.AnimationClip(name, clip.duration, tracks);
+    const a = mixer.clipAction(sub); a.play(); a.paused = true; a.time = 0;
+    return a;
+  }
+  const actL = subAction(n=>n==='Left_door', 'L');
+  const actR = subAction(n=>n==='Right_door', 'R');
+  const actS = subAction(n=>/^joint|^nurbsCircle/.test(n), 'S');
+
+  /* --- zones: boxes in MODEL-LOCAL space (numbers straight from the glb) --- */
+  const L = new THREE.Box3(new THREE.Vector3(0.011,0.004,-0.012), new THREE.Vector3(0.021,0.025,0.016));
+  /* far door is occluded by the near one → trigger it from the ROOF band instead */
+  const R = new THREE.Box3(new THREE.Vector3(-0.021,0.021,-0.014), new THREE.Vector3(0.021,0.029,0.016));
+  const B = new THREE.Box3(new THREE.Vector3(-0.020,0.010,-0.046), new THREE.Vector3(0.020,0.027,-0.028));
+
+  function corners(bx){ const o=[]; for(let i=0;i<8;i++) o.push(new THREE.Vector3(
+      i&1?bx.max.x:bx.min.x, i&2?bx.max.y:bx.min.y, i&4?bx.max.z:bx.min.z)); return o; }
+
+  zones.push({ name:'left',  box:L, corners:corners(L), open:0, state:false, action:actL, sprigs:[],
+               origin:new THREE.Vector3(0.012, 0.011, 0.002), dir:new THREE.Vector3(1,0,0),  n:14 });
+  zones.push({ name:'right', box:R, corners:corners(R), open:0, state:false, action:actR, sprigs:[],
+               origin:new THREE.Vector3(-0.012,0.011, 0.002), dir:new THREE.Vector3(-1,0,0), n:10 });
+  zones.push({ name:'rear',  box:B, corners:corners(B), open:0, state:false, action:actS, sprigs:[],
+               origin:new THREE.Vector3(0, 0.016, -0.036), dir:new THREE.Vector3(0,0,-1), n:16 });
+
+  /* --- flowers: azalea sprigs, world space --- */
+  const fscene = flowerGltf.scene;
+  fscene.traverse(n=>{ if(n.isMesh){ n.castShadow = true;
+    const ms = Array.isArray(n.material)?n.material:[n.material];
+    for(const m of ms) if(m){ m.side = THREE.DoubleSide; if(m.isMeshStandardMaterial) m.envMapIntensity = 0.6; } } });
+  const fb = new THREE.Box3().setFromObject(fscene);
+  const branchLen = fb.max.x;                        // ≈ 30 units, root at origin
+  const SPRIG = 0.85 / branchLen;                    // sprig ≈ 0.85 world units long
+
+  const up = new THREE.Vector3(0,1,0);
+  for(const z of zones){
+    const originW = z.origin.clone(); model.localToWorld(originW);
+    const dirW = z.dir.clone().transformDirection(model.matrixWorld).setY(0).normalize();
+    const sideW = new THREE.Vector3().crossVectors(up, dirW).normalize();
+    for(let i=0;i<z.n;i++){
+      const sprig = fscene.clone(true);
+      const climb = i % 3 === 0;                     // every 3rd sprig climbs over the body
+      const yaw = Math.atan2(dirW.x, dirW.z);        // rotate +X of sprig toward dirW
+      const g = new THREE.Group();
+      g.add(sprig);
+      /* orientation: yaw toward exit, spread ±35°, pitch: cascade droops, climb rises */
+      const spread = rnd(-0.6, 0.6);
+      const pitch  = climb ? rnd(0.55, 1.15) : rnd(-0.55, -0.05);
+      g.rotation.order = 'YXZ';
+      g.rotation.y = yaw - Math.PI/2 + spread;       // sprig +X axis → dirW (yaw measured for +Z)
+      g.rotation.z = pitch;                          // tilt around side axis (local Z after yaw)
+      g.rotation.x = rnd(-0.3, 0.3);                 // roll
+      const scale = SPRIG * rnd(0.75, 1.35) * (z.name==='rear' ? 1.15 : 1);
+      const rootW = originW.clone()
+        .addScaledVector(sideW, rnd(-0.7, 0.7))
+        .addScaledVector(dirW, rnd(-0.05, 0.12));
+      rootW.y += rnd(-0.12, 0.22);
+      g.position.copy(rootW);
+      g.userData = { scale, threshold: Math.random()*0.5, baseRot: g.rotation.clone(), start: rootW.clone(),
+                     end: rootW.clone().addScaledVector(dirW, rnd(0.2, 0.6)) };
+      g.scale.setScalar(0.0001);
+      flowerRoot.add(g);
+      z.sprigs.push(g);
+    }
+  }
+
+  document.getElementById('load').classList.add('hidden');
+  statusEl.textContent = 'READY — F: MỞ TẤT CẢ';
+}
+
+/* ---------- hover: projected zone boxes, hysteresis ---------- */
+const mouse = { x:-9999, y:-9999, active:false };
+let lastInput = -9999;
+const pnow = ()=>performance.now()/1000;
+addEventListener('mousemove', e=>{ mouse.x=e.clientX; mouse.y=e.clientY; mouse.active=true; lastInput=pnow(); });
+document.addEventListener('mouseleave', ()=>{ mouse.active=false; });
+addEventListener('touchmove', e=>{ const t=e.touches[0]; mouse.x=t.clientX; mouse.y=t.clientY; mouse.active=true; lastInput=pnow(); },{passive:true});
+addEventListener('touchend', ()=>{ mouse.active=false; });
+addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='f') forceOpen = !forceOpen; });
+
+let carOpen = 0, flowerT = 0, hoverState = false, lastHover = -9;
+const carZone = { corners: (()=>{ const bx = new THREE.Box3(new THREE.Vector3(-0.023,0,-0.048), new THREE.Vector3(0.023,0.029,0.048));
+  const o=[]; for(let i=0;i<8;i++) o.push(new THREE.Vector3(i&1?bx.max.x:bx.min.x, i&2?bx.max.y:bx.min.y, i&4?bx.max.z:bx.min.z)); return o; })() };
+function elasticOut(t){ if(t<=0) return 0; if(t>=1) return 1; const c=1.25; t=t-1; return 1 + t*t*((c+1)*t + c); }
+const _v = new THREE.Vector3();
+function projectedRect(z){
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const cL of z.corners){
+    _v.copy(cL); model.localToWorld(_v); _v.project(camera);
+    const sx=( _v.x*0.5+0.5)*innerWidth, sy=(-_v.y*0.5+0.5)*innerHeight;
+    if(sx<x0)x0=sx; if(sx>x1)x1=sx; if(sy<y0)y0=sy; if(sy>y1)y1=sy;
+  }
+  return { x0,y0,x1,y1 };
+}
+function inRect(r, pad){
+  const w=(r.x1-r.x0)*pad, h=(r.y1-r.y0)*pad;
+  return mouse.x>=r.x0-w && mouse.x<=r.x1+w && mouse.y>=r.y0-h && mouse.y<=r.y1+h;
+}
+
+/* ---------- loop ---------- */
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const time = clock.elapsedTime;
+  const damp = 1 - Math.exp(-dt*7);
+  let anyOpen = 0;
+
+  if(model){
+    const idle = (pnow() - lastInput) > 4;
+    /* ONE zone: the whole car. Enter at 3% pad, leave at 15% pad + 0.4s grace */
+    const rect = projectedRect(carZone);
+    let hovered = false;
+    if(mouse.active && inRect(rect, 0.03)){ hoverState = true; lastHover = time; hovered = true; }
+    else if(hoverState){
+      const still = mouse.active && inRect(rect, 0.15);
+      if(still){ lastHover = time; hovered = true; }
+      else if(time - lastHover > 0.4) hoverState = false;
+    }
+    const active = hoverState || forceOpen;
+
+    /* doors: slow both ways */
+    let target = active ? 1 : 0;
+    if(idle && !mouse.active && !forceOpen) target = 0.1 + Math.sin(time*0.7)*0.07;
+    const kDoor = target > carOpen ? 1.9 : 1.5;
+    carOpen += (target - carOpen) * (1 - Math.exp(-dt*kDoor));
+    anyOpen = carOpen;
+
+    /* flowers: wait until doors are ~1/4 open, then BURST fast; retract slowly */
+    if(active && carOpen > 0.2) flowerT = Math.min(1, flowerT + dt*0.95);
+    else if(!active)             flowerT += (0 - flowerT) * (1 - Math.exp(-dt*1.6));
+
+    for(const z of zones){
+      if(z.action) z.action.time = (z.name === 'rear' ? 1 - ease(carOpen) : ease(carOpen)) * 2.44;
+      for(const g of z.sprigs){
+        const t = clamp01((flowerT - g.userData.threshold) / 0.6);
+        const s = flowerT >= 1 || t >= 1 ? elasticOut(t) : (active ? elasticOut(t) : ease(t));
+        g.scale.setScalar(Math.max(s * g.userData.scale, 0.0001));
+        g.position.lerpVectors(g.userData.start, g.userData.end, ease(t));
+        /* settle wobble: shakes right after the pop, dies out */
+        const w = Math.sin(t*Math.PI*2) * (1 - t) * 0.08 * (active ? 1 : 0);
+        g.rotation.x = g.userData.baseRot.x + w;
+        g.rotation.z = g.userData.baseRot.z + w*0.5;
+      }
+    }
+    renderer.domElement.style.cursor = hovered ? 'pointer' : '';
+    mixer.update(0);
+  }
+
+  const nx = mouse.active ? (mouse.x/innerWidth)*2-1 : 0;
+  const ny = mouse.active ? (mouse.y/innerHeight)*2-1 : 0;
+  camOffset.x += (nx - camOffset.x) * damp;
+  camOffset.y += (ny - camOffset.y) * damp;
+  dolly += (anyOpen*0.5 - dolly) * damp;
+  camera.position.set(camBase.x + camOffset.x*0.8, camBase.y - camOffset.y*0.4, camBase.z - dolly);
+  camera.lookAt(camTarget);
+  renderer.render(scene, camera);
+}
+animate();
+addEventListener('resize', ()=>{ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+</script>
+</body>
+</html>
