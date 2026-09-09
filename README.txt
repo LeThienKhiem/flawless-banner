@@ -11,9 +11,25 @@ Tương tác:
   - Rê chuột lên XE   → 2 cửa mở chậm + cánh gió bung, hoa nở dần nhẹ nhàng (~1.5s), hơi vượt rồi lắng
   - Rời chuột 0.4s   → cửa từ từ đóng, hoa từ từ thu lại
   - Cảm ứng: chạm vào xe → nở; chạm lần nữa (hoặc chạm ra ngoài) → đóng
+  - GIỮ & KÉO trên xe → xoay xe mọi hướng (ngang 360°, dọc có chặn), nhả tay
+    thì còn trôi theo quán tính. Kéo <12px vẫn tính là "chạm" nên không lẫn
+    với việc bật/tắt hoa trên mobile.
+  - Phím R           → về đúng góc gốc (ease, không giật)
   - Phím F           → mở tất cả (test)
   - Phím D / nút góc trên phải → đổi SÁNG / TỐI
   - Bỏ chuột 4s      → cửa hé nhẹ mời tương tác
+
+Xoay (hold & drag):
+  Thực chất là ORBIT CAMERA quanh camAim, không rotate model — vì hoa được đặt
+  trong world space theo matrix của xe lúc build(), quay model sẽ làm hoa rơi
+  lệch khỏi xe. Nhìn thì y như xe đang xoay.
+  - ORBIT.yaw/pitch là độ lệch so với góc gốc (baseTheta/basePhi suy ra từ camBase)
+  - PITCH_MIN/PITCH_MAX = 0.45 / 1.52 rad tính từ trục +Y → chặn không cho lên
+    thẳng đỉnh (lookAt sẽ lật) và không cho chui xuống dưới sàn
+  - Mỗi lần góc đổi, solveDist() chạy lại → xe luôn vừa khung ở mọi hướng
+    (bóng xe side-on dài hơn head-on nên khoảng cách phải đổi theo)
+  - Chuột: bắt buộc e.buttons còn giữ, vì mọi event chuột dùng chung pointerId,
+    mất pointerup (nhả ngoài cửa sổ) là xe sẽ xoay theo chuột mãi
 
 Dark mode:
   Lần đầu vào theo cài đặt hệ điều hành (prefers-color-scheme); sau khi bấm nút

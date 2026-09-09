@@ -25,8 +25,10 @@
     -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
     touch-action:manipulation}
   ::selection{background:transparent}
-  #stage{position:fixed;inset:0}
-  canvas{display:block}
+  /* touch-action:none on the stage only — a one-finger drag there must reach
+     pointermove to turn the car, not be eaten as a browser pan gesture */
+  #stage{position:fixed;inset:0;touch-action:none}
+  canvas{display:block;touch-action:none}
   .overlay{position:fixed;inset:0;pointer-events:none;z-index:5;
     display:flex;flex-direction:column;align-items:center;padding-top:5vh;color:var(--ink)}
   h1{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-style:italic;
@@ -128,7 +130,7 @@
 <div class="stat tr"><b>500+</b><span>CARS SERVICED EVERY MONTH WITH HIGHEST QUALITY STANDARDS</span></div>
 <div class="stat bl"><b>7</b><span>YEARS OF PROFESSIONAL EXPERIENCE</span></div>
 <div class="stat br"><b>98%</b><span>OF CLIENTS RECOMMEND US TO FRIENDS</span></div>
-<div id="hint">RÊ CHUỘT LÊN XE</div>
+<div id="hint">RÊ CHUỘT LÊN XE · GIỮ &amp; KÉO ĐỂ XOAY</div>
 
 <button id="theme" type="button" aria-label="Đổi sáng / tối">
   <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/>
@@ -172,7 +174,7 @@ const hintEl = document.getElementById('hint');
 
 /* phones pay for every pixel and every shadow caster — trim both, keep the look */
 const MOBILE = matchMedia('(max-width:720px)').matches || matchMedia('(pointer:coarse)').matches;
-if(MOBILE) hintEl.textContent = 'CHẠM VÀO XE';
+if(MOBILE) hintEl.textContent = 'CHẠM VÀO XE · GIỮ KÉO ĐỂ XOAY';
 
 /* ---------- renderer / scene / camera ---------- */
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
@@ -238,12 +240,10 @@ function placeCam(d){
   camera.lookAt(camAim);
   camera.updateMatrixWorld();               // projectedRect() reads matrixWorldInverse
 }
-function fitCamera(){
-  updateAim();
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.shadowMap.needsUpdate = true;
+/* Solve the distance for the CURRENT camDir. Split out of fitCamera() because the
+   orbit drag re-solves it every frame — reframing as the silhouette gets longer or
+   shorter — and must not touch the render target size while doing so. */
+function solveDist(){
   camDist = camDist0;
   if(!model) return;                        // build() calls us again once the car is in
   const portrait = PORTRAIT();
@@ -258,6 +258,29 @@ function fitCamera(){
     if(portrait ? Math.abs(fill - 1) < 0.004 : fill <= 1.002) break;
     camDist *= Math.min(Math.max(fill, 0.55), 1.6);   // size ≈ 1/distance → converges in ~2 passes
   }
+}
+function fitCamera(){
+  updateAim();
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.needsUpdate = true;
+  solveDist();
+}
+
+/* ---------- hold & drag to turn the car ----------
+   The camera orbits camAim instead of the car rotating: the sprigs and lotuses were
+   placed in world space off the car's matrix at build time, so spinning the model
+   would tear the bouquet off it. Same picture, none of the breakage. */
+const ORBIT = { yaw:0, pitch:0, vYaw:0, vPitch:0 };
+const PITCH_MIN = 0.45, PITCH_MAX = 1.52;   // radians from +Y: high three-quarter .. almost ground level
+const baseTheta = Math.atan2(camDir.x, camDir.z);
+const basePhi = Math.acos(Math.min(Math.max(camDir.y, -1), 1));
+function applyOrbit(){
+  const phi = Math.min(Math.max(basePhi + ORBIT.pitch, PITCH_MIN), PITCH_MAX);
+  ORBIT.pitch = phi - basePhi;              // clamp the stored value too, so it can't wind up
+  const th = baseTheta + ORBIT.yaw, sp = Math.sin(phi);
+  camDir.set(sp*Math.sin(th), Math.cos(phi), sp*Math.cos(th));
 }
 
 let envTex = null;
@@ -531,7 +554,7 @@ function build(){
   fitCamera();                          // now that the car exists, frame it for this viewport
   renderer.shadowMap.needsUpdate = true;
   document.getElementById('load').classList.add('hidden');
-  statusEl.textContent = 'READY — F: MỞ TẤT CẢ · D: SÁNG/TỐI';
+  statusEl.textContent = 'READY — F: MỞ TẤT CẢ · D: SÁNG/TỐI · R: VỀ GÓC GỐC';
 }
 
 /* ---------- hover: projected zone boxes, hysteresis ---------- */
@@ -548,6 +571,7 @@ let touchLatch = false, lastTap = -9;
 if(MOBILE) addEventListener('pointerup', e=>{
   if(!model) return;
   if(e.target && e.target.closest && e.target.closest('#theme')) return;   // button does its own job
+  if(drag.moved > TAP_SLOP) return;                    // that was a turn, not a tap
   /* one tap must count once: if a browser also emits a compatibility pointer event,
      toggling twice would look exactly like "the second tap does nothing" */
   if(pnow() - lastTap < 0.25) return;
@@ -555,11 +579,55 @@ if(MOBILE) addEventListener('pointerup', e=>{
   lastInput = pnow();
   mouse.x = e.clientX; mouse.y = e.clientY;
   touchLatch = inRect(projectedRect(carZone), 0.12) ? !touchLatch : false;
-  hintEl.textContent = touchLatch ? 'CHẠM LẦN NỮA ĐỂ ĐÓNG' : 'CHẠM VÀO XE';
+  hintEl.textContent = touchLatch ? 'CHẠM LẦN NỮA ĐỂ ĐÓNG · GIỮ KÉO ĐỂ XOAY'
+                                  : 'CHẠM VÀO XE · GIỮ KÉO ĐỂ XOAY';
 });
+
+/* hold anywhere on the car and drag to turn it — mouse, finger or stylus */
+const drag = { id:null, x:0, y:0, moved:0 };
+const TAP_SLOP = 12;                                   // px of travel still counted as a tap
+addEventListener('pointerdown', e=>{
+  drag.id = null; drag.moved = 0;                      // reset first: the latch reads .moved
+  if(!model) return;
+  if(e.target && e.target.closest && e.target.closest('#theme')) return;
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  if(!inRect(projectedRect(carZone), 0.06)) return;    // only the car is grabbable
+  drag.id = e.pointerId; drag.x = e.clientX; drag.y = e.clientY;
+  ORBIT.vYaw = ORBIT.vPitch = 0;                       // a new grab kills the spin
+  lastInput = pnow();
+  renderer.domElement.style.cursor = 'grabbing';
+});
+addEventListener('pointermove', e=>{
+  if(drag.id !== e.pointerId) return;
+  /* a mouse keeps sending pointermove with no button down, and all mouse events
+     share one pointerId — so a pointerup missed outside the window would leave the
+     car spinning along with the cursor forever. Trust e.buttons, not the id alone. */
+  if(e.pointerType === 'mouse' && !(e.buttons & 1)){ endDrag(e); return; }
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  drag.moved += Math.abs(dx) + Math.abs(dy);
+  /* scale to the viewport so a swipe across the screen is about the same sweep
+     on a phone as on a desktop; vertical is gentler than horizontal on purpose */
+  const k = 3.2 / Math.max(innerWidth, 520);
+  const dYaw = -dx * k, dPitch = -dy * k * 0.6;
+  ORBIT.yaw += dYaw; ORBIT.pitch += dPitch;
+  /* blended so a diagonal swipe still coasts, instead of only the last axis moved */
+  ORBIT.vYaw = ORBIT.vYaw*0.45 + dYaw*0.55;
+  ORBIT.vPitch = ORBIT.vPitch*0.45 + dPitch*0.55;
+  applyOrbit(); solveDist();
+  lastInput = pnow();
+});
+function endDrag(e){
+  if(drag.id !== e.pointerId) return;
+  drag.id = null;
+  renderer.domElement.style.cursor = '';
+}
+addEventListener('pointerup', endDrag);
+addEventListener('pointercancel', endDrag);
 addEventListener('keydown', e=>{
   const k = (e.key || '').toLowerCase();
   if(k === 'f') forceOpen = !forceOpen;
+  else if(k === 'r'){ ORBIT.returning = true; ORBIT.vYaw = ORBIT.vPitch = 0; }
   else if(k === 'd') applyTheme(curTheme === 'dark' ? 'light' : 'dark', true);
 });
 
@@ -640,12 +708,34 @@ function animate(){
         L.mix.update(0);
       }
     }
-    renderer.domElement.style.cursor = hovered ? 'pointer' : '';
+    /* grab beats point: holding the car turns it */
+    renderer.domElement.style.cursor = drag.id !== null ? 'grabbing' : hovered ? 'grab' : '';
     mixer.update(0);
   }
 
-  const nx = mouse.active ? (mouse.x/innerWidth)*2-1 : 0;
-  const ny = mouse.active ? (mouse.y/innerHeight)*2-1 : 0;
+  /* let the turn coast to a stop after the pointer lets go */
+  const spinning = Math.abs(ORBIT.vYaw) > 2e-4 || Math.abs(ORBIT.vPitch) > 2e-4;
+  if(drag.id !== null) ORBIT.returning = false;              // a new grab wins over the reset
+  if(drag.id === null && spinning){
+    ORBIT.yaw += ORBIT.vYaw; ORBIT.pitch += ORBIT.vPitch;
+    ORBIT.vYaw *= 0.92; ORBIT.vPitch *= 0.92;
+    applyOrbit(); solveDist();
+  } else if(ORBIT.returning){
+    /* R: ease back to the art-directed angle, shortest way round */
+    let y = ORBIT.yaw % (Math.PI*2);
+    if(y >  Math.PI) y -= Math.PI*2;
+    if(y < -Math.PI) y += Math.PI*2;
+    ORBIT.yaw = y * (1 - damp); ORBIT.pitch *= (1 - damp);
+    if(Math.abs(ORBIT.yaw) < 0.002 && Math.abs(ORBIT.pitch) < 0.002){
+      ORBIT.yaw = ORBIT.pitch = 0; ORBIT.returning = false;
+    }
+    applyOrbit(); solveDist();
+  }
+
+  /* the mouse-follow parallax would fight the hand that is turning the car */
+  const holding = drag.id !== null || spinning;
+  const nx = (mouse.active && !holding) ? (mouse.x/innerWidth)*2-1 : 0;
+  const ny = (mouse.active && !holding) ? (mouse.y/innerHeight)*2-1 : 0;
   camOffset.x += (nx - camOffset.x) * damp;
   camOffset.y += (ny - camOffset.y) * damp;
   const zoom = camDist / camDist0;                       // keep the dolly-in proportional when pulled back
